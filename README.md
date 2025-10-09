@@ -8,4 +8,4 @@ User credentials to be downloaded as credentials.json via:
 
 Credentials>>Create credentials>>OAuth Client ID, Desktop App, identifying client name>>Create
 
-credentials.json goes in gcp_secrets/
+credentials.json goes in folder ./gcp_secrets/
