@@ -1,0 +1,6 @@
+*credentials.json
+*token.json
+*.ipynb_checkpoints
+*__pycache__
+.gitattributes
+venv/
