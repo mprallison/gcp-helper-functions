@@ -116,6 +116,7 @@ class GDocsClient:
                 return section
         
         print(f'table_id "{table_id}" not found in a gdoc table')
+        
         return None
 
     def read_table_textruns(self, doc, table_id, header_row_index, preserve_format=False):
@@ -126,6 +127,8 @@ class GDocsClient:
 
         def read_textrun_element(elem):
 
+            #drop suggested deletions as though accepted
+            #preserve format allows formatting to be written to document
             if "suggestedDeletionIds" in elem["textRun"]:
                 return (elem["startIndex"], " " * len(elem["textRun"]["content"]) if preserve_format else "")
             return (elem["startIndex"], elem["textRun"]["content"])
@@ -231,6 +234,7 @@ class GSheetsClient:
         
         print(f"Serving sheet: {sh.title}, {sheet_name}")
         df = pd.DataFrame(ws.get_all_records())
+        
         return df.astype(str), ws
 
     def write_sheet(self, df, worksheet):
@@ -260,6 +264,7 @@ class GDriveClient:
             supportsAllDrives=True,
             pageSize=1000
         ).execute()
+        
         return {f["name"]: f["id"] for f in results["files"]}
 
     def create_folder(self, folder_name: str, parent_folder_id: str):
@@ -272,5 +277,7 @@ class GDriveClient:
             "mimeType": "application/vnd.google-apps.folder",
             "parents": [parent_folder_id]
         }
+
         folder = self.drive_service.files().create(body=folder_metadata, fields="*", supportsAllDrives=True).execute()
+        
         return folder["id"]
