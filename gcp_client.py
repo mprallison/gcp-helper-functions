@@ -206,6 +206,20 @@ class GDocsClient:
         table = table.map(lambda x: (strip_chars(x)))
 
         return table
+    
+    def execute_request(self, doc_id, requests):
+        
+        """run batch update to gdoc
+
+        args:
+            doc_id: target gdoc
+            requests: list opf json requests
+        """
+        
+        result = self.doc_service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
+
+        return result
+
 
 # --- Google Sheets Client ---
 class GSheetsClient:
