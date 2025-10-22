@@ -62,17 +62,14 @@ def read_table_textruns(doc, table_id, header_row_index, preserve_format=False):
         return (elem["startIndex"], elem["textRun"]["content"])
 
     def read_para(para):
-
         para_elems = [read_textrun_element(e) for e in para["elements"]]
         return para_elems[0][0], "".join([e[1] for e in para_elems])
 
     def read_cell(cell):
-
         cell_elems = [read_para(p["paragraph"]) for p in cell["content"]]
         return cell_elems[0][0], "".join([e[1] for e in cell_elems])
 
     def read_row(row):
-
         return [read_cell(c) for c in row["tableCells"]]
 
     section = read_table_section(doc, table_id)
@@ -103,7 +100,7 @@ def read_doc_table(doc, table_id, header_row_index, preserve_format=False):
         preserve_format: True if doc contains suggested changes and changes are to be written back to doc
     """
 
-    from gdoc_helper_functions import read_table_textruns
+    from read_gdoc_helper_functions import read_table_textruns
 
     cells, column_n = read_table_textruns(doc, table_id, header_row_index, preserve_format)
 
