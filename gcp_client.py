@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-import numpy as np
 import gspread
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -12,8 +11,11 @@ from gspread_dataframe import set_with_dataframe
 # --- Authentication ---
 class GCPAuth:
 
-    def __init__(self, relative_path: str):
+    """create auth credentials from secrets
+    if token.json doesn't exist then prompt user
+    """
 
+    def __init__(self, relative_path: str):
         self.relative_path = relative_path
         self.creds = self._load_credentials()
         self.oauth = self._gspread_oauth()
@@ -52,33 +54,7 @@ class GCPAuth:
 class GDocsClient:
 
     def __init__(self, creds: Credentials):
-
         self.doc_service = build("docs", "v1", credentials=creds)
-
-    def create_document(self, title, folder_id=None):
-        
-        """create a new gdoc in MyDrive. return document id
-
-        args:
-            title: gdoc file name
-        """
-
-        doc = self.doc_service.documents().create(body={"title": title}).execute()
-
-        return doc.get("documentId")
-
-    def execute_request(self, doc_id, requests):
-        
-        """run batch update to gdoc
-
-        args:
-            doc_id: target gdoc
-            requests: list opf json requests
-        """
-        
-        result = self.doc_service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
-
-        return result
 
     def read_doc(self, document_id):
 
@@ -98,13 +74,26 @@ class GDocsClient:
             print("Error:", error)
             return None
 
+    def execute_request(self, doc_id, requests):
+        
+        """run batch update to gdoc
+
+        args:
+            doc_id: target gdoc
+            requests: list opf json requests
+        """
+        
+        result = self.doc_service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
+
+        return result
+
 # --- Google Sheets Client ---
 class GSheetsClient:
 
     def __init__(self, gspread_client):
         self.gc = gspread_client
 
-    def read_sheet(self, document_id, sheet_name):
+    def read_sheet(self, document_id, sheet_name, headers=None, header_row=0):
 
         """if tab does not exist, create tab
         return sheet content as dataframe and worksheet
@@ -113,7 +102,8 @@ class GSheetsClient:
             document_id: id string found in url when document is open in browser
                          https://docs.google.com/spreadsheets/d/LONG STIRNG HERE/edit?gid=0#gid=0
             sheet_name: sheet (or tab) in gsheet document
-             
+            headers: df will reject empty or repeated headers in gsheet. so assign ordered headers
+            header_row: assign if data does not start on line one of gsheet
         """
 
         sh = self.gc.open_by_key(document_id)
@@ -124,7 +114,20 @@ class GSheetsClient:
             ws = sh.worksheet(sheet_name)
         
         print(f"Serving sheet: {sh.title}, {sheet_name}")
-        df = pd.DataFrame(ws.get_all_records())
+        
+        if headers is None:
+            records = ws.get_all_records(head=header_row)
+            
+        else:
+            all_data = ws.get_all_values()
+            data_rows = all_data[header_row+1:]
+
+            records = []
+            for row in data_rows:
+                record = dict(zip(headers, row))
+                records.append(record)
+            
+            df = pd.DataFrame(records)
         
         return df.astype(str), ws
 
@@ -140,6 +143,7 @@ class GSheetsClient:
 
 # --- Google Drive Client ---
 class GDriveClient:
+
     def __init__(self, creds: Credentials):
         self.drive_service = build("drive", "v3", credentials=creds)
 
@@ -160,20 +164,42 @@ class GDriveClient:
         
         return {f["name"]: f["id"] for f in results["files"]}
 
-    def create_folder(self, folder_name: str, parent_folder_id: str):
-
-        """create new directory in gdrive
+    def create_gdrive_object(self, name, mime_type, folder_id):
+        
         """
+        create new empty object in a specific google drive folder.
+        return object id
 
-        folder_metadata = {
-            "name": folder_name,
-            "mimeType": "application/vnd.google-apps.folder",
-            "parents": [parent_folder_id]
+        args:
+            name (str): name of the new object.
+            mime_type (str): mimetype shortcut: "gdoc", "gsheet", "folder"
+            folder_id (str): id of the parent folder.
+            file_content (bytes, optional): The content to upload. If None,
+                                             creates a metadata-only file.
+        """
+        
+        full_mimetypes = {
+                        "gdoc": "application/vnd.google-apps.document",
+                        "gsheet": "application/vnd.google-apps.sheet",
+                        "folder": "application/vnd.google-apps.folder"
+                        }
+
+        full_mime_type = full_mimetypes[mime_type]
+        
+        file_metadata = {
+            'name': name,
+            'mimeType': full_mime_type,
+            'parents': [folder_id]
         }
 
-        folder = self.drive_service.files().create(body=folder_metadata, fields="*", supportsAllDrives=True).execute()
-        
-        return folder["id"]
+        try:
+            file = self.drive_service.files().create(body=file_metadata, supportsAllDrives=True, fields="id").execute()
+            
+            return file["id"]
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return None
 
     def copy_file(self, file_id, copy_name=None, new_directory_id=None, mime_type=None):
 
@@ -195,6 +221,48 @@ class GDriveClient:
         if mime_type:
             body["mimeType"] = mime_type
 
-        result = self.drive_service.files().copy(fileId=file_id, body=body, supportsAllDrives=True).execute()
+        result = self.drive_service.files().copy(fileId=file_id, body=body, fields="id", supportsAllDrives=True).execute()
         
         return result["id"]
+    
+# --- Google Form Client ---
+class GFormClient():
+    
+    def __init__(self, creds: Credentials):
+        self.form_service = build("forms", "v1", credentials=creds)
+
+    def get_data(self, form_id):
+            
+        """retrieve all submission data and form metadata
+
+        args:
+            form_id: file id
+        """
+
+        try:
+            all_responses = []
+            page_token = None
+
+            #for paginator
+            while True:
+                request = self.form_service.forms().responses().list(formId=form_id, pageToken=page_token)
+                result = request.execute()
+                
+                #get response data
+                responses = result.get("responses", [])
+                if responses:
+                    all_responses.extend(responses)
+                
+                page_token = result.get("nextPageToken")
+                if not page_token:
+                    break
+
+            #get form questions and name meta
+            form_meta = self.form_service.forms().get(formId=form_id).execute()
+            form_meta.get("items", [])
+       
+            return all_responses, form_meta
+
+        except HttpError as err:
+            print(f"An error occurred: {err}")
+            return None
