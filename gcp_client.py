@@ -127,7 +127,7 @@ class GSheetsClient:
                 record = dict(zip(headers, row))
                 records.append(record)
             
-            df = pd.DataFrame(records)
+        df = pd.DataFrame(records)
         
         return df.astype(str), ws
 
@@ -225,6 +225,17 @@ class GDriveClient:
         
         return result["id"]
     
+    def delete_object(self, object_id):
+
+        """delete object 
+        """
+        
+        try:
+            self.drive_service.files().delete(fileId=object_id, supportsAllDrives=True).execute()
+        
+        except Exception as e:
+            return f"An error occurred: {e}"
+
 # --- Google Form Client ---
 class GFormClient():
     
